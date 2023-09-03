@@ -1,0 +1,99 @@
+function HB(J2,n_lf,n_q,T)
+    implicit none
+    integer::n_lf,n_q,i,j,k
+    real::J2,T,dq,pr,q,norm
+    real:: HB(n_q,n_lf),J_arr(n_lf)
+
+    q=0
+    dq=8*atan(1.0)/(n_q)
+    J_arr=[(i,i=0,n_lf-1,1)]*(4*T*(1+abs(J2))/(n_lf-1))
+    HB=0
+    do i=1,n_lf
+        pr=0
+        do j=1,n_q
+
+                pr=pr+exp(-J_arr(i)*cos(q))
+                HB(j,i)=pr
+                q=q+dq
+        end do
+
+    HB(:,i)=HB(:,i)/pr
+    end do
+end function HB
+
+
+subroutine Heat_bath(Qmat,T,J2,table,n_dim,nbr,n_q,n_lf,pi)
+    implicit none
+    integer:: n_dim,itr,i,j,j_no,n_lf,n_q,inv_hb
+    integer,dimension(n_dim,n_dim,8,2) :: nbr
+    real::J2,sx,sy,qr,ql,qu,qd,qs,qn,qe,qw,q,rad(2),mag,T,pi
+    real::Qmat(n_dim,n_dim),table(n_q,n_lf)
+    do itr=1,n_dim**2
+        call random_number(rad)
+        i=floor(rad(1)*n_dim+1)
+        j=floor(rad(2)*n_dim+1)
+        qr=Qmat(nbr(i,j,4,1),nbr(i,j,4,2))
+        ql=Qmat(nbr(i,j,8,1),nbr(i,j,8,2))
+        qu=Qmat(nbr(i,j,2,1),nbr(i,j,2,2))
+        qd=Qmat(nbr(i,j,6,1),nbr(i,j,6,2))
+        qs=Qmat(nbr(i,j,5,1),nbr(i,j,5,2))
+        qn=Qmat(nbr(i,j,1,1),nbr(i,j,1,2))
+        qw=Qmat(nbr(i,j,3,1),nbr(i,j,3,2))
+        qe=Qmat(nbr(i,j,7,1),nbr(i,j,7,2))
+        q=Qmat(i,j)
+        sx= -1*(cos(qr)+cos(ql)+cos(qu)+cos(qd))+J2*(cos(qs)+cos(qn)+cos(qw)+cos(qe))
+        sy= -1*(sin(qr)+sin(ql)+sin(qu)+sin(qd))+J2*(sin(qs)+sin(qn)+sin(qw)+sin(qe))
+        mag=sqrt(sx**2+sy**2)
+        j_no=ceiling(mag*n_lf/(4+4*abs(J2)))
+        Qmat(i,j)= atan2(sy,sx)+(inv_hb(table(:,j_no),n_q)-1)*(2*pi)/(n_q)
+        end do
+end subroutine Heat_bath
+
+function inv_hb(th,n_q)
+    integer::inv_hb,n_q,r,l
+    real::th(n_q),p
+    call random_number(p)
+    l=1
+    r=n_q
+    do while(r-l>1)
+        if(p<th((l+r)/2)) then
+            r=(l+r)/2
+        else
+            l=(l+r)/2
+        end if
+    end do
+    inv_hb=l
+end function inv_hb
+
+
+function nbr(n_dim)
+        integer:: n_dim,i,j
+        integer,dimension(n_dim,n_dim,8,2) :: nbr
+        do i=1,n_dim
+            do j=1,n_dim
+                nbr(i,j,1,1)=modulo(i-2,n_dim)+1
+                nbr(i,j,1,2)=modulo(j-2,n_dim)+1
+
+                nbr(i,j,2,1)=modulo(i-2,n_dim)+1
+                nbr(i,j,2,2)=j
+
+                nbr(i,j,3,1)=modulo(i-2,n_dim)+1
+                nbr(i,j,3,2)=modulo(j,n_dim)+1
+
+                nbr(i,j,4,1)=i
+                nbr(i,j,4,2)=modulo(j,n_dim)+1
+
+                nbr(i,j,5,1)=modulo(i,n_dim)+1
+                nbr(i,j,5,2)=modulo(j,n_dim)+1
+
+                nbr(i,j,6,1)=modulo(i,n_dim)+1
+                nbr(i,j,6,2)=j
+
+                nbr(i,j,7,1)=modulo(i,n_dim)+1
+                nbr(i,j,7,2)=modulo(j-2,n_dim)+1
+
+                nbr(i,j,8,1)=i
+                nbr(i,j,8,2)=modulo(j-2,n_dim)+1
+            end do
+        end do
+    end function nbr

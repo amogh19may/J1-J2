@@ -1,0 +1,16 @@
+#!/bin/bash
+read code
+#PBS -o logfile.log
+#PBS -e errorfile.err
+#PBS -l walltime=24:00:00
+#PBS -l select=1:ncpus=4
+tpdir=`echo $PBS_JOBID | cut -f 1 -d .`
+tempdir=$HOME/scratch/job$tpdir
+mkdir -p $tempdir
+cd $tempdir
+cp $Home/frus8/$code $tempdir/$code
+module load intel 2020
+mpiifort $code -o ens.exe
+mpirun -np 4 -genv OMP_NUM_THREADS=1 -genv I_MPI_PIN=1 -genv I_MPI_FABRICS=shm:ofi -hostfile $PBS_NODEFILE ./ens.exe >$HOME/data/output.txt
+cd ..
+mv job$tpdir $HOME/log_dump

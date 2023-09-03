@@ -1,0 +1,159 @@
+
+program hello
+    implicit none
+    include "mpif.h"
+    integer,parameter::n_dim=16
+    integer,parameter::n_eqb=15000
+    integer,parameter::n_save=15000
+    integer,parameter::rel=20
+    real,parameter::pi=4.0*atan(1.0)
+    real,parameter::J2=0.70
+    real,parameter::thr=-0.1
+    integer::ranks,proc,ierr
+    integer::i,j,k,l,k1,k2,k3,k4,a,b
+    integer::nbr(8,n_dim**2),sb_lt(4,(n_dim**2)/4),nbr_full(8,2),occ(n_dim**2)
+    real::T,T_in,mc,chiral,chi4,chi2,chi
+    real::Q(n_dim**2),U_all(rel),occ_rnd(n_dim**2)
+    real,allocatable::U(:)
+    call MPI_Init(ierr)
+    call MPI_Comm_rank(MPI_COMM_WORLD,ranks,ierr)
+    call MPI_Comm_size(MPI_COMM_WORLD,proc,ierr)
+    allocate(U(rel/proc))
+    do i=1,n_dim
+        do j=1,n_dim
+            nbr_full(1,1)=modulo(i-2,n_dim)+1
+            nbr_full(1,2)=j
+
+            nbr_full(2,1)=modulo(i-2,n_dim)+1
+            nbr_full(2,2)=modulo(j-2,n_dim)+1
+
+            nbr_full(3,1)=i
+            nbr_full(3,2)=modulo(j-2,n_dim)+1
+
+            nbr_full(4,1)=modulo(i,n_dim)+1
+            nbr_full(4,2)=modulo(j-2,n_dim)+1
+
+            nbr_full(5,1)=modulo(i,n_dim)+1
+            nbr_full(5,2)=j
+
+            nbr_full(6,1)=modulo(i,n_dim)+1
+            nbr_full(6,2)=modulo(j,n_dim)+1
+
+            nbr_full(7,1)=i
+            nbr_full(7,2)=modulo(j,n_dim)+1
+
+            nbr_full(8,1)=modulo(i-2,n_dim)+1
+            nbr_full(8,2)=modulo(j,n_dim)+1
+
+            do k=1,8
+                nbr(k,j+n_dim*(i-1))=nbr_full(k,2)+n_dim*(nbr_full(k,1)-1)
+            end do
+        end do
+    end do
+    k1=1
+    k2=1
+    k3=1
+    k4=1
+    do i=1,n_dim
+        do j=1,n_dim
+            a=modulo(i,2)
+            b=modulo(j,2)
+            if(a/=0 .and. b/=0) then
+                sb_lt(1,k1)=j+n_dim*(i-1)
+                k1=k1+1
+            elseif(a/=0 .and. b==0) then
+                sb_lt(2,k2)=j+n_dim*(i-1)
+                k2=k2+1
+            elseif(a==0 .and. b/=0) then
+                sb_lt(3,k3)=j+n_dim*(i-1)
+                k3=k3+1
+            else
+                sb_lt(4,k4)=j+n_dim*(i-1)
+                k4=k4+1
+            end if
+        end do
+    end do
+    do k=1,10
+    do l=1,rel/proc
+        occ=1
+        call random_number(Q)
+        call random_number(occ_rnd)
+        do i=1,n_dim**2
+            if(occ_rnd(i)<thr) then
+                occ(i)=0
+            end if
+        end do
+        Q=Q*2*pi-pi
+        T=0.559+0.001*k
+        k4=0.0
+        k2=0.0
+        chi2=0.0
+        chi4=0.0
+        T_in=1/T
+        do i=1,n_eqb
+            do j=1,n_dim**2
+                Q(j)=Q(j)+mc(Q,j,nbr,occ,T_in,J2,n_dim,pi)
+            end do
+        end do
+
+        do i=1,n_save
+            do j=1,n_dim**2
+                Q(j)=Q(j)+mc(Q,j,nbr,occ,T_in,J2,n_dim,pi)
+            end do
+	    chi=chiral(Q,n_dim,nbr,occ)
+            chi4=chi4+chi**4.0
+            chi2=chi2+chi**2.0
+        end do
+        U(l)=1-n_save*chi4/(3*chi2**2)
+    end do
+    call MPI_Gather(U,rel/proc,MPI_REAL,U_all,rel/proc,MPI_REAL,0,MPI_COMM_WORLD,ierr)
+    if(ranks==0) then
+        print*,sum(U_all)/rel,"      ",sqrt(sum(U_all**2)/rel-(sum(U_all)/rel)**2)
+    end if
+    end do
+    deallocate(U)
+    call MPI_Finalize(ierr)
+end program
+
+function mc(Q,ind,nbr,occ,T_in,J2,n_dim,pi)
+    implicit none
+    integer::n_dim,ind,i
+    integer::nbr(8,n_dim**2),occ(n_dim**2)
+    real::T_in,J2,pi,wf,wi,Ei,Ef,r,mc
+    real::Q(n_dim**2),p(8)
+    wi=Q(ind)
+    call random_number(wf)
+    call random_number(r)
+    wf=wf*2*pi-pi
+    p=Q(nbr(1:8,ind))
+    do i=1,8
+        Ei=Ei+occ(nbr(i,ind))*(0.7-1.7*modulo(i,2))*cos(wi-p(i))
+        Ef=Ei+occ(nbr(i,ind))*(0.7-1.7*modulo(i,2))*cos(wf-p(i))
+    end do
+    if(exp(T_in*(Ei-Ef))>r) then
+        mc=wf-wi
+    else
+        mc=0.0
+    end if
+end function
+
+function chiral(Q,n_dim,nbr,occ)
+    implicit none
+    integer::n_dim,i,plq_occ,plq_n
+    integer::nbr(8,n_dim**2),occ(n_dim**2)
+    real::chiral,qi,qj,qk,ql
+    real::Q(n_dim**2)
+    chiral=0.0
+    plq_n=0
+    do i=1,n_dim**2
+        qi=Q(i)
+        qj=Q(nbr(7,i))
+        qk=Q(nbr(8,i))
+        ql=Q(nbr(1,i))
+        plq_occ=occ(i)*occ(nbr(7,i))*occ(nbr(8,i))*occ(nbr(1,i))
+        chiral=chiral+0.25*(cos(qi-qj)-cos(qi-ql)-cos(qk-qj)+cos(qk-ql))*plq_occ
+        plq_n=plq_n+plq_occ
+    end do
+    chiral=chiral/plq_n
+end function
+
